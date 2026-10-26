@@ -8,7 +8,8 @@ import {
   Star,
   Calendar,
   ShieldCheck,
-  Check
+  Check,
+  X
 } from 'lucide-react';
 import {
   YAS_GRUPLARI,
@@ -25,7 +26,8 @@ export const FilterBar = ({
   onResetFilters,
   onApplyFilters,
   loading,
-  isOpen
+  isOpen,
+  onClose
 }) => {
   const handlePlatformToggle = (platform) => {
     let current = [...(filters.platformlar || [])];
@@ -59,14 +61,26 @@ export const FilterBar = ({
             <Layers size={18} className="text-accent" />
             <span>Filtreleme & Akıllı Keşif</span>
           </div>
-          <button
-            onClick={onResetFilters}
-            className="reset-btn"
-            title="Tüm filtreleri sıfırla"
-          >
-            <RotateCcw size={14} />
-            <span>Sıfırla</span>
-          </button>
+          <div className="filter-header-actions">
+            <button
+              onClick={onResetFilters}
+              className="reset-btn"
+              title="Tüm filtreleri sıfırla"
+            >
+              <RotateCcw size={14} />
+              <span>Sıfırla</span>
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                className="filter-close-btn"
+                onClick={onClose}
+                title="Filtreleri Kapat"
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="filter-body">
@@ -268,7 +282,10 @@ export const FilterBar = ({
           <button
             type="button"
             className="apply-btn"
-            onClick={onApplyFilters}
+            onClick={() => {
+              onApplyFilters();
+              if (onClose) onClose();
+            }}
             disabled={loading}
           >
             {loading ? (

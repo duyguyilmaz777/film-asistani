@@ -110,6 +110,15 @@ export const Navbar = ({
             {favoriteCount > 0 && <span className="action-badge">{favoriteCount}</span>}
           </button>
 
+          {/* Filter Toggle (mobile & desktop shortcut) */}
+          <button
+            className={`action-btn filter-toggle-btn ${filtersOpen ? 'active' : ''}`}
+            onClick={onToggleFilters}
+            title="Filtreleri Göster / Gizle"
+          >
+            <SlidersHorizontal size={18} />
+          </button>
+
           {/* Settings Button */}
           <button
             className="action-btn settings-btn"
@@ -118,16 +127,28 @@ export const Navbar = ({
           >
             <Settings size={18} />
           </button>
-
-          {/* Filter Toggle (for mobile) */}
-          <button
-            className={`action-btn filter-toggle-btn ${filtersOpen ? 'active' : ''}`}
-            onClick={onToggleFilters}
-            title="Filtreleri Göster / Gizle"
-          >
-            <SlidersHorizontal size={18} />
-          </button>
         </div>
+      </div>
+
+      {/* Mobile-dedicated Search Bar (Visible on mobile/tablet) */}
+      <div className="navbar-mobile-search">
+        <Search size={16} className="search-icon" />
+        <input
+          type="text"
+          placeholder="Film, dizi veya anahtar kelime ara..."
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="search-input mobile-search-input"
+        />
+        {searchQuery && (
+          <button
+            className="search-clear-btn"
+            onClick={() => onSearchChange('')}
+            title="Temizle"
+          >
+            ×
+          </button>
+        )}
       </div>
     </header>
   );

@@ -176,6 +176,7 @@ export function App() {
           onApplyFilters={() => runSearch(filters)}
           loading={loading}
           isOpen={filtersMobileOpen}
+          onClose={() => setFiltersMobileOpen(false)}
         />
 
         {/* Right Content Area */}
