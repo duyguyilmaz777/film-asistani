@@ -15,6 +15,57 @@ const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const OMDB_BASE_URL = 'https://www.omdbapi.com';
 
 /**
+ * Helper to extract comparable timestamp from releaseDate or year
+ * Items without a valid date are placed at the end when sorting oldest-first.
+ */
+export const getReleaseTimestamp = (film, fallbackForEmpty = Number.MAX_SAFE_INTEGER) => {
+  if (film.releaseDate) {
+    const parsed = Date.parse(film.releaseDate);
+    if (!isNaN(parsed)) return parsed;
+  }
+  const y = parseInt(film.year, 10);
+  if (!isNaN(y) && y > 0) {
+    return Date.parse(`${y}-01-01`);
+  }
+  return fallbackForEmpty;
+};
+
+/**
+ * Sorts films list according to selected criteria.
+ * Default is 'En Eski' (oldest release date first).
+ */
+export const sortFilms = (films, siralama = 'En Eski') => {
+  const copy = [...(films || [])];
+  copy.sort((a, b) => {
+    if (siralama === 'En Eski') {
+      return getReleaseTimestamp(a, Number.MAX_SAFE_INTEGER) - getReleaseTimestamp(b, Number.MAX_SAFE_INTEGER);
+    }
+    if (siralama === 'En Yeni') {
+      return getReleaseTimestamp(b, 0) - getReleaseTimestamp(a, 0);
+    }
+    if (siralama === 'wr_skoru') {
+      const diff = (b.wr_skoru || 0) - (a.wr_skoru || 0);
+      if (diff !== 0) return diff;
+      return getReleaseTimestamp(a) - getReleaseTimestamp(b);
+    }
+    if (siralama === 'final_skor') {
+      return (b.final_skor || 0) - (a.final_skor || 0);
+    }
+    if (siralama === 'En Yüksek Puan') {
+      const diff = parseFloat(b.imdb_puani || 0) - parseFloat(a.imdb_puani || 0);
+      if (diff !== 0) return diff;
+      return getReleaseTimestamp(a) - getReleaseTimestamp(b);
+    }
+    if (siralama === 'En Popüler') {
+      return (b.popularity || 0) - (a.popularity || 0);
+    }
+    // Default fallback: oldest release date first
+    return getReleaseTimestamp(a, Number.MAX_SAFE_INTEGER) - getReleaseTimestamp(b, Number.MAX_SAFE_INTEGER);
+  });
+  return copy;
+};
+
+/**
  * Main search & filter runner matching n8n workflow steps:
  * LookUp -> TMDB Discover/Search -> Details & TR Providers -> OMDB -> Age Rating Filter -> Bayes (TekeDusur) -> Jaccard Taste Similarity
  */
@@ -26,43 +77,87 @@ export const searchAndFilterFilms = async (filters, username = 'Duygu') => {
     throw new Error('TMDB API anahtarı bulunamadı. Lütfen .env dosyasına TMDB_API_KEY değerini ekleyin.');
   }
 
-  // 1) Fetch live TMDB & OMDb results
-  const rawFilms = await fetchLiveTmdbFilms(filters, settings);
+  let currentPage = filters.sayfa || 1;
+  let rawFilms = [];
+  let hasMore = false;
+  let attempts = 0;
 
-  // 2) Bayesian Weighted Rating calculation (matches n8n 'TekeDusur')
+  // Fetch live TMDB & OMDb results (if age filter eliminates all items on a page, automatically advance up to 2 pages)
+  while (attempts < 2) {
+    const fetchResult = await fetchLiveTmdbFilms({ ...filters, sayfa: currentPage }, settings);
+    rawFilms = [...rawFilms, ...fetchResult.items];
+    hasMore = fetchResult.hasMore;
+    attempts += 1;
+
+    if (rawFilms.length >= 6 || !hasMore) {
+      break;
+    }
+    currentPage += 1;
+  }
+
+  // 2) Bayesian Weighted Rating calculation (matches n8n 'TekeDusur' - mathematical formula unchanged)
   const withBayes = calculateBayesianScores(rawFilms, 1000);
 
   // 3) User Genre Frequency & Jaccard Taste Matching (matches n8n 'Benzerlik Skoru' & 'GecmisTurSorgusu')
   const genreFreqs = getPastGenreFrequencies(username);
   const scoredFilms = calculateTasteSimilarityAndFinalScores(withBayes, genreFreqs);
 
-  // 4) Sorting based on filter
-  const siralama = filters.siralama || 'wr_skoru';
-  scoredFilms.sort((a, b) => {
-    if (siralama === 'wr_skoru') {
-      return (b.wr_skoru || 0) - (a.wr_skoru || 0);
-    }
-    if (siralama === 'final_skor') {
-      return (b.final_skor || 0) - (a.final_skor || 0);
-    }
-    if (siralama === 'En Yüksek Puan') {
-      return parseFloat(b.imdb_puani || 0) - parseFloat(a.imdb_puani || 0);
-    }
-    if (siralama === 'En Popüler') {
-      return (b.popularity || 0) - (a.popularity || 0);
-    }
-    if (siralama === 'En Yeni') {
-      return parseInt(b.year || 0) - parseInt(a.year || 0);
-    }
-    return 0;
-  });
+  // 4) Sort films (default: oldest release date first)
+  const siralama = filters.siralama || 'En Eski';
+  const sortedFilms = sortFilms(scoredFilms, siralama);
 
   return {
-    filmler: scoredFilms,
-    toplamSonuc: scoredFilms.length,
+    filmler: sortedFilms,
+    toplamSonuc: sortedFilms.length,
+    hasMore,
+    lastFetchedPage: currentPage,
     kaynak: 'TMDB & OMDb Canlı Bağlantı'
   };
 };
+
+/**
+ * Resolves allowed MPAA/TV ratings from single or multi-select yasGrubu filter
+ */
+function getAllowedRatingsForFilter(yasGrubuFilter) {
+  const groups = Array.isArray(yasGrubuFilter)
+    ? yasGrubuFilter
+    : yasGrubuFilter
+    ? [yasGrubuFilter]
+    : ['all'];
+
+  if (groups.length === 0 || groups.includes('all') || groups.includes('18+')) {
+    return null; // No restriction (all ratings allowed)
+  }
+
+  const allowedSet = new Set();
+  groups.forEach((g) => {
+    const list = IZINLI_DERECELER_MAP[g] || [];
+    list.forEach((r) => allowedSet.add(r));
+  });
+
+  return allowedSet.size > 0 ? allowedSet : null;
+}
+
+/**
+ * Resolves TMDB genre IDs string (joined with '|' for OR multi-select)
+ */
+function getGenreQueryParam(turFilter) {
+  const genres = Array.isArray(turFilter)
+    ? turFilter
+    : turFilter
+    ? [turFilter]
+    : ['Tümü'];
+
+  if (genres.includes('Tümü') || genres.length === 0) {
+    return '';
+  }
+
+  const ids = genres
+    .map((g) => GENRE_MAP[g])
+    .filter(Boolean);
+
+  return ids.join('|');
+}
 
 /**
  * Live TMDB Fetcher (replicates n8n HTTP Request1, watch/providers TR, and OMDb nodes)
@@ -73,6 +168,7 @@ async function fetchLiveTmdbFilms(filters, settings) {
   const page = filters.sayfa || 1;
 
   const allItems = [];
+  let anyTypeHasMore = false;
 
   for (const mediaType of mediaTypesToFetch) {
     let endpoint = '';
@@ -95,6 +191,7 @@ async function fetchLiveTmdbFilms(filters, settings) {
 
       if (filters.siralama === 'En Yeni') {
         params.append('sort_by', `${dateField}.desc`);
+        params.append('vote_count.gte', '10');
       } else if (filters.siralama === 'En Yüksek Puan') {
         params.append('sort_by', 'vote_average.desc');
         params.append('vote_count.gte', '150');
@@ -103,9 +200,10 @@ async function fetchLiveTmdbFilms(filters, settings) {
         params.append('vote_count.gte', '20');
       }
 
-      // Genre
-      if (filters.tur && GENRE_MAP[filters.tur]) {
-        params.append('with_genres', GENRE_MAP[filters.tur]);
+      // Multi-select Genre filter
+      const genreParam = getGenreQueryParam(filters.tur);
+      if (genreParam) {
+        params.append('with_genres', genreParam);
       }
 
       // Date range
@@ -143,13 +241,18 @@ async function fetchLiveTmdbFilms(filters, settings) {
         const data = await res.json();
         const results = (data.results || []).map(r => ({ ...r, _detectedType: mediaType }));
         allItems.push(...results);
+        if (data.page && data.total_pages && data.page < data.total_pages) {
+          anyTypeHasMore = true;
+        }
       }
     } catch (e) {
       console.error(`Error querying TMDB for ${mediaType}:`, e);
     }
   }
 
-  // Fetch full details and providers for top 20 candidates
+  const allowedRatingsSet = getAllowedRatingsForFilter(filters.yasGrubu);
+
+  // Fetch full details and providers for candidates on this page
   const detailedPromises = allItems.slice(0, 20).map(async item => {
     const mediaType = item._detectedType || (item.title ? 'movie' : 'tv');
     try {
@@ -167,12 +270,12 @@ async function fetchLiveTmdbFilms(filters, settings) {
 
       const providerNames = flatrate.map(p => p.provider_name);
       const title = d.title || d.name || item.title || item.name;
-      const releaseDate = d.release_date || d.first_air_date || '';
+      const releaseDate = d.release_date || d.first_air_date || item.release_date || item.first_air_date || '';
       const year = releaseDate ? releaseDate.split('-')[0] : '';
       const imdbId = d.external_ids?.imdb_id;
 
       // OMDb fetch for accurate ratings and age certification
-      let imdbRating = String(d.vote_average || '0');
+      let imdbRating = String(d.vote_average ? Number(d.vote_average).toFixed(1) : '0');
       let imdbVotes = String(d.vote_count || '0');
       let rated = 'PG-13'; // default fallback
       let genreNames = (d.genres || []).map(g => g.name).join(', ');
@@ -195,12 +298,9 @@ async function fetchLiveTmdbFilms(filters, settings) {
         }
       }
 
-      // Age Rating Filter (n8n YasKontrolu logic)
-      if (filters.yasGrubu && filters.yasGrubu !== 'all' && filters.yasGrubu !== '18+') {
-        const allowed = IZINLI_DERECELER_MAP[filters.yasGrubu] || [];
-        if (allowed.length > 0 && rated && !allowed.includes(rated)) {
-          return null; // Exclude content that exceeds age limit
-        }
+      // Multi-select Age Rating Filter (n8n YasKontrolu logic)
+      if (allowedRatingsSet && rated && !allowedRatingsSet.has(rated)) {
+        return null; // Exclude content that does not match selected age groups
       }
 
       // Trailer
@@ -213,6 +313,7 @@ async function fetchLiveTmdbFilms(filters, settings) {
         imdb_id: imdbId,
         title: title,
         title_tr: title,
+        releaseDate,
         year,
         mediaType,
         genre: genreNames,
@@ -237,5 +338,8 @@ async function fetchLiveTmdbFilms(filters, settings) {
   });
 
   const detailedList = (await Promise.all(detailedPromises)).filter(Boolean);
-  return detailedList;
+  return {
+    items: detailedList,
+    hasMore: anyTypeHasMore
+  };
 }

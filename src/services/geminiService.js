@@ -1,5 +1,6 @@
 // Gemini AI Recommendation Service: Direct REST API & Smart Fallback Engine
 import { getSettings } from './storageService';
+import { getAgeRatingInfo } from '../constants/options';
 
 const GEMINI_SYSTEM_INSTRUCTION = `Sen bir aile ve sinema film/dizi öneri asistanısın. Sana JSON formatında filtrelenmiş bir aday listesi verilecek.
 
@@ -49,12 +50,13 @@ async function callGeminiApi(films, prefs, apiKey) {
     imdb_puani: f.imdb_puani,
     imdbVotes: f.imdbVotes,
     genre: f.genre,
-    rated: f.rated,
+    yas_uygunlugu: getAgeRatingInfo(f.rated).longLabel,
     platformlar: f.platformlar || f.providers?.join(', '),
-    wr_skoru: f.wr_skoru,
+    guvenilir_puan: f.wr_skoru,
     popularity: f.popularity,
     zevk_uyumu_yuzde: f.matchPercentage || 70,
     yil: f.year,
+    gosterim_tarihi: f.releaseDate || f.year,
     ozet: f.overview
   }));
 

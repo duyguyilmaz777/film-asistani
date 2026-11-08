@@ -10,9 +10,14 @@ import {
   Tv,
   Film,
   Sparkles,
-  Info
+  Info,
+  Calendar
 } from 'lucide-react';
-import { PLATFORM_CONFIG } from '../constants/options';
+import {
+  PLATFORM_CONFIG,
+  getAgeRatingInfo,
+  formatReleaseDate
+} from '../constants/options';
 
 export const MovieDetailModal = ({
   movie,
@@ -31,6 +36,9 @@ export const MovieDetailModal = ({
   }, [onClose]);
 
   if (!movie) return null;
+
+  const ageInfo = getAgeRatingInfo(movie.rated);
+  const formattedDate = formatReleaseDate(movie.releaseDate, movie.year);
 
   const platforms = (movie.platformlar || '')
     .split(',')
@@ -101,15 +109,24 @@ export const MovieDetailModal = ({
             <div className="modal-badges-bar">
               <span className="badge badge-media-type">
                 {movie.mediaType === 'tv' ? <Tv size={13} /> : <Film size={13} />}
-                <span>{movie.mediaType === 'tv' ? 'Dizi' : 'Film'} · {movie.year}</span>
+                <span>{movie.mediaType === 'tv' ? 'Dizi' : 'Film'}</span>
               </span>
 
-              {movie.rated && (
-                <span className="badge badge-age">
-                  <Shield size={12} />
-                  <span>{movie.rated} Yaş Sınırı</span>
-                </span>
-              )}
+              <span className="badge badge-media-type" title="Gösterim / Çıkış Tarihi">
+                <Calendar size={12} />
+                <span>{formattedDate}</span>
+              </span>
+
+              <span
+                className="badge badge-age"
+                style={{
+                  borderColor: ageInfo.color,
+                  color: ageInfo.color
+                }}
+              >
+                <Shield size={12} />
+                <span>{ageInfo.longLabel}</span>
+              </span>
 
               {movie.matchPercentage > 0 && (
                 <span className="badge badge-ai-glow">
@@ -135,26 +152,39 @@ export const MovieDetailModal = ({
 
               {movie.wr_skoru && (
                 <div className="score-block">
-                  <div className="score-label">Bayes Güvenilirlik Skoru</div>
+                  <div className="score-label">Gerçekçi (Güvenilir) Puan</div>
                   <div className="score-value-row">
                     <span className="big-score text-cyan">{movie.wr_skoru}</span>
                     <span className="score-denominator">/ 10</span>
                   </div>
-                  <div className="score-subtext">Oy sayısı ağırlıklı gerçekçi puan</div>
+                  <div className="score-subtext">Oy sayısı & puan dengeli gerçek skor</div>
                 </div>
               )}
 
               {movie.final_skor && (
                 <div className="score-block">
-                  <div className="score-label">Kişisel Nihai Skor</div>
+                  <div className="score-label">Size Özel Uyum Puanı</div>
                   <div className="score-value-row">
                     <span className="big-score text-pink">{movie.final_skor}</span>
                     <span className="score-denominator">/ 1.0</span>
                   </div>
-                  <div className="score-subtext">Güvenilirlik (%70) + Zevk (%30)</div>
+                  <div className="score-subtext">Güvenilirlik (%70) + Zevkiniz (%30)</div>
                 </div>
               )}
             </div>
+
+            {/* Friendly Explanation of Reliable (Bayesian) Score */}
+            {movie.wr_skoru && (
+              <div className="modal-score-explainer">
+                <Info size={16} className="text-cyan shrink-0" />
+                <div>
+                  <strong>Gerçekçi (Güvenilir) Puan Nasıl Hesaplanır?</strong>
+                  <p>
+                    Bir filme sadece birkaç kişinin 10 puan vermesi yanıltıcı olabilir. Bu puan, <strong>filmin aldığı puanı toplam oy veren izleyici sayısıyla</strong> harmanlar; böylece binlerce kişinin izleyip onayladığı gerçekten kaliteli yapımları görmenizi sağlar.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Synopsis / Konu */}
             <div className="modal-synopsis-section">

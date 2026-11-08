@@ -162,7 +162,7 @@ export const FavoritesDrawer = ({
                 <div>
                   <h4>Kişisel Zevk & Benzerlik Analizi</h4>
                   <p>
-                    Aramalarınız ve beğendiğiniz filmler incelenerek Jaccard benzerlik skorunuz bu tür ağırlıklarına göre hesaplanır.
+                    Aramalarınız ve beğendiğiniz içerikler incelenerek size özel <strong>Zevk Uyumu</strong> oranınız bu tür ağırlıklarına göre otomatik hesaplanır.
                   </p>
                 </div>
               </div>

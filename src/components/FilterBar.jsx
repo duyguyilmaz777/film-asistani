@@ -9,7 +9,8 @@ import {
   Calendar,
   ShieldCheck,
   Check,
-  X
+  X,
+  Info
 } from 'lucide-react';
 import {
   YAS_GRUPLARI,
@@ -29,6 +30,63 @@ export const FilterBar = ({
   isOpen,
   onClose
 }) => {
+  // Multi-select handler for Yaş Grubu
+  const handleYasGrubuToggle = (groupId) => {
+    const raw = filters.yasGrubu;
+    let current = Array.isArray(raw) ? [...raw] : raw ? [raw] : ['all'];
+
+    if (groupId === 'all') {
+      onFilterChange({ ...filters, yasGrubu: ['all'] });
+      return;
+    }
+
+    current = current.filter((g) => g !== 'all');
+
+    if (current.includes(groupId)) {
+      current = current.filter((g) => g !== groupId);
+      if (current.length === 0) current = ['all'];
+    } else {
+      current.push(groupId);
+    }
+
+    onFilterChange({ ...filters, yasGrubu: current });
+  };
+
+  const isYasGrubuSelected = (groupId) => {
+    const raw = filters.yasGrubu;
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : ['all'];
+    return list.includes(groupId);
+  };
+
+  // Multi-select handler for Film / Dizi Türü
+  const handleTurToggle = (genre) => {
+    const raw = filters.tur;
+    let current = Array.isArray(raw) ? [...raw] : raw ? [raw] : ['Tümü'];
+
+    if (genre === 'Tümü') {
+      onFilterChange({ ...filters, tur: ['Tümü'] });
+      return;
+    }
+
+    current = current.filter((g) => g !== 'Tümü');
+
+    if (current.includes(genre)) {
+      current = current.filter((g) => g !== genre);
+      if (current.length === 0) current = ['Tümü'];
+    } else {
+      current.push(genre);
+    }
+
+    onFilterChange({ ...filters, tur: current });
+  };
+
+  const isTurSelected = (genre) => {
+    const raw = filters.tur;
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : ['Tümü'];
+    return list.includes(genre);
+  };
+
+  // Multi-select handler for Platformlar
   const handlePlatformToggle = (platform) => {
     let current = [...(filters.platformlar || [])];
     if (platform === 'Tümü') {
@@ -36,11 +94,10 @@ export const FilterBar = ({
       return;
     }
 
-    // Remove 'Tümü' if selecting specific platform
-    current = current.filter(p => p !== 'Tümü');
+    current = current.filter((p) => p !== 'Tümü');
 
     if (current.includes(platform)) {
-      current = current.filter(p => p !== platform);
+      current = current.filter((p) => p !== platform);
       if (current.length === 0) current = ['Tümü'];
     } else {
       current.push(platform);
@@ -114,44 +171,63 @@ export const FilterBar = ({
             </div>
           </div>
 
-          {/* 2) Yaş Grubu (Content Rating Filter) */}
+          {/* 2) Yaş Grubu (Multi-select Content Rating Filter) */}
           <div className="filter-section">
-            <label className="filter-label">
-              <ShieldCheck size={15} className="text-emerald" />
-              <span>Yaş Grubu & Aile Filtresi</span>
-            </label>
-            <select
-              value={filters.yasGrubu}
-              onChange={(e) => onFilterChange({ ...filters, yasGrubu: e.target.value })}
-              className="custom-select"
-            >
-              {YAS_GRUPLARI.map((yg) => (
-                <option key={yg.id} value={yg.id}>
-                  {yg.label}
-                </option>
-              ))}
-            </select>
+            <div className="filter-label-flex">
+              <label className="filter-label">
+                <ShieldCheck size={15} className="text-emerald" />
+                <span>Yaş Grubu & Aile Filtresi</span>
+              </label>
+              <span className="multi-hint">Çoklu Seçim</span>
+            </div>
+            <div className="platforms-grid">
+              {YAS_GRUPLARI.map((yg) => {
+                const active = isYasGrubuSelected(yg.id);
+                return (
+                  <button
+                    key={yg.id}
+                    type="button"
+                    className={`platform-pill age-pill ${active ? 'active' : ''}`}
+                    onClick={() => handleYasGrubuToggle(yg.id)}
+                  >
+                    {active && <Check size={12} />}
+                    <span>{yg.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* 3) Tür Seçimi */}
+          {/* 3) Tür Seçimi (Multi-select Genre Filter) */}
           <div className="filter-section">
-            <label className="filter-label">Film / Dizi Türü</label>
-            <select
-              value={filters.tur}
-              onChange={(e) => onFilterChange({ ...filters, tur: e.target.value })}
-              className="custom-select"
-            >
-              {GENRE_LIST.map((genre) => (
-                <option key={genre} value={genre}>
-                  {genre === 'Tümü' ? '🎭 Tüm Türler' : genre}
-                </option>
-              ))}
-            </select>
+            <div className="filter-label-flex">
+              <label className="filter-label">Film / Dizi Türü</label>
+              <span className="multi-hint">Çoklu Seçim</span>
+            </div>
+            <div className="platforms-grid">
+              {GENRE_LIST.map((genre) => {
+                const active = isTurSelected(genre);
+                return (
+                  <button
+                    key={genre}
+                    type="button"
+                    className={`platform-pill genre-select-pill ${active ? 'active' : ''}`}
+                    onClick={() => handleTurToggle(genre)}
+                  >
+                    {active && <Check size={12} />}
+                    <span>{genre === 'Tümü' ? '🎭 Tümü' : genre}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* 4) Türkiye Yayın Platformları (Multi-select) */}
           <div className="filter-section">
-            <label className="filter-label">Türkiye Yayın Platformları</label>
+            <div className="filter-label-flex">
+              <label className="filter-label">Türkiye Yayın Platformları</label>
+              <span className="multi-hint">Çoklu Seçim</span>
+            </div>
             <div className="platforms-grid">
               <button
                 type="button"
@@ -238,7 +314,7 @@ export const FilterBar = ({
 
           {/* 7) Sıralama Kriteri */}
           <div className="filter-section">
-            <label className="filter-label">Sıralama Algoritması</label>
+            <label className="filter-label">Sıralama Ölçütü</label>
             <select
               value={filters.siralama}
               onChange={(e) =>
@@ -252,6 +328,17 @@ export const FilterBar = ({
                 </option>
               ))}
             </select>
+
+            {/* User-friendly explanation of Reliable (Bayesian) Score */}
+            <div className="bayes-explainer-card">
+              <div className="bayes-explainer-header">
+                <Info size={14} className="text-cyan" />
+                <span>Güvenilir Puan Nedir?</span>
+              </div>
+              <p className="bayes-explainer-text">
+                Sadece birkaç kişinin yüksek puan verdiği yanıltıcı yapımlara aldanmamanız için; <strong>IMDb puanı ile oy veren izleyici sayısını</strong> birleştirerek hesaplanan gerçekçi başarı puanıdır.
+              </p>
+            </div>
           </div>
 
           {/* 8) Gemini AI Önerisi Toggle */}
