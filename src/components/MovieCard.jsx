@@ -4,13 +4,16 @@ import {
   Shield,
   Heart,
   Bookmark,
-  ExternalLink,
   Tv,
   Film,
   Sparkles,
-  Info
+  ShieldCheck
 } from 'lucide-react';
-import { PLATFORM_CONFIG } from '../constants/options';
+import {
+  PLATFORM_CONFIG,
+  getAgeRatingInfo,
+  formatReleaseDate
+} from '../constants/options';
 
 export const MovieCard = ({
   movie,
@@ -20,15 +23,8 @@ export const MovieCard = ({
   isWatchlist,
   onToggleWatchlist
 }) => {
-  const getAgeRatingColor = (rated) => {
-    if (!rated) return 'var(--text-dim)';
-    const r = rated.toUpperCase();
-    if (['G', 'TV-Y', 'TV-G'].includes(r)) return '#10b981'; // Green
-    if (['PG', 'TV-Y7', 'TV-PG'].includes(r)) return '#06b6d4'; // Cyan
-    if (['PG-13', 'TV-14'].includes(r)) return '#f59e0b'; // Amber
-    if (['R', 'NC-17', 'TV-MA', '18+'].includes(r)) return '#ef4444'; // Red
-    return 'var(--text-dim)';
-  };
+  const ageInfo = getAgeRatingInfo(movie.rated);
+  const formattedDate = formatReleaseDate(movie.releaseDate, movie.year);
 
   // Extract platforms
   const platforms = (movie.platformlar || '')
@@ -56,26 +52,24 @@ export const MovieCard = ({
 
         {/* Top Badges */}
         <div className="card-top-badges">
-          {/* Media Type */}
-          <span className="badge badge-media-type">
+          {/* Media Type & Release Date */}
+          <span className="badge badge-media-type" title={`Gösterim / Çıkış Tarihi: ${formattedDate}`}>
             {movie.mediaType === 'tv' ? <Tv size={12} /> : <Film size={12} />}
-            <span>{movie.year || ''}</span>
+            <span>{formattedDate}</span>
           </span>
 
-          {/* Age Rating Badge */}
-          {movie.rated && (
-            <span
-              className="badge badge-age"
-              style={{
-                borderColor: getAgeRatingColor(movie.rated),
-                color: getAgeRatingColor(movie.rated)
-              }}
-              title={`Yaş Derecelendirmesi: ${movie.rated}`}
-            >
-              <Shield size={11} />
-              <span>{movie.rated}</span>
-            </span>
-          )}
+          {/* Friendly Age Rating Badge */}
+          <span
+            className="badge badge-age"
+            style={{
+              borderColor: ageInfo.color,
+              color: ageInfo.color
+            }}
+            title={ageInfo.longLabel}
+          >
+            <Shield size={11} />
+            <span>{ageInfo.shortLabel}</span>
+          </span>
         </div>
 
         {/* Action Buttons overlay */}
@@ -136,9 +130,10 @@ export const MovieCard = ({
           {movie.wr_skoru && (
             <div
               className="bayes-badge"
-              title="Bayes Ağırlıklı Güvenilirlik Skoru: Oy sayısı çok olan ve sapması düşük içerikleri öne çıkarır."
+              title="Gerçekçi Güvenilirlik Puanı: Sadece puana değil, kaç kişinin oy verdiğine de bakarak hesaplanan yanılmaz başarı puanı (Az oylu yanıltıcı yüksek puanları eler)."
             >
-              <span>Bayes:</span>
+              <ShieldCheck size={12} className="text-cyan" />
+              <span>Güvenilir:</span>
               <strong>{movie.wr_skoru}</strong>
             </div>
           )}
