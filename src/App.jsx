@@ -12,6 +12,7 @@ import { MovieDetailModal } from './components/MovieDetailModal';
 import { AiRecommendationModal } from './components/AiRecommendationModal';
 import { SettingsModal } from './components/SettingsModal';
 import { FavoritesDrawer } from './components/FavoritesDrawer';
+import { ChatbotWidget } from './components/ChatbotWidget';
 import { searchAndFilterFilms, sortFilms } from './services/apiService';
 import { generateAiRecommendation } from './services/geminiService';
 import {
@@ -385,6 +386,22 @@ export function App() {
           activeProfile={activeProfile}
         />
       )}
+
+      {/* Floating AI Chatbot & Discovery Wizard */}
+      <ChatbotWidget
+        activeProfile={activeProfile}
+        currentFilms={films}
+        onSelectMovie={(m) => setSelectedMovie(m)}
+        onApplyWizardFilters={(wizardFilters) => {
+          const merged = {
+            ...filters,
+            ...wizardFilters,
+            siralama: filters.siralama || 'En Eski'
+          };
+          setFilters(merged);
+          runSearch(merged);
+        }}
+      />
     </div>
   );
 }

@@ -38,13 +38,42 @@ export const generateAiRecommendation = async (candidateFilms, userPreferences =
   return generateLocalSmartRecommendation(candidateFilms, userPreferences);
 };
 
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+
 /**
- * Direct call to Google Gemini 1.5/2.0 Flash API (v1beta)
+ * Calls Google Gemini API trying active models in order
+ */
+async function postToGemini(requestBody, apiKey) {
+  let lastError = null;
+
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+
+      const errorData = await response.json().catch(() => ({}));
+      lastError = new Error(errorData.error?.message || `Gemini HTTP ${response.status}`);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Gemini API Error');
+}
+
+/**
+ * Direct call to Google Gemini Flash API (v1beta)
  */
 async function callGeminiApi(films, prefs, apiKey) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-  // Prepare top 5 candidates payload
+  // Prepare top 6 candidates payload
   const candidatesPayload = films.slice(0, 6).map(f => ({
     title: f.title_tr || f.title,
     imdb_puani: f.imdb_puani,
@@ -72,6 +101,7 @@ Lütfen en iyi 2-3 içeriği seçip sistem talimatlarına uygun olarak karşıla
     },
     contents: [
       {
+        role: 'user',
         parts: [{ text: prompt }]
       }
     ],
@@ -81,18 +111,7 @@ Lütfen en iyi 2-3 içeriği seçip sistem talimatlarına uygun olarak karşıla
     }
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error?.message || 'Gemini API Error');
-  }
-
-  const data = await response.json();
+  const data = await postToGemini(requestBody, apiKey);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   return text || 'Tavsiye metni oluşturulamadı.';
 }
@@ -144,3 +163,128 @@ function generateLocalSmartRecommendation(films, prefs) {
 
   return report;
 }
+
+/**
+ * Interactive Chatbot with Gemini AI (free-form natural conversation + optional movie context)
+ */
+export const chatWithCineBot = async (chatHistory = [], contextFilms = [], wizardPrefs = {}) => {
+  const settings = getSettings();
+  const apiKey = settings.geminiApiKey?.trim();
+
+  if (!apiKey) {
+    return 'Gemini API anahtarı bulunamadı. Sağ üstteki **Ayarlar** simgesinden Gemini API anahtarınızı eklediğinizde her konuda sınırsız sohbet edebiliriz.';
+  }
+
+  try {
+    return await callGeminiChatApi(chatHistory, contextFilms, wizardPrefs, apiKey);
+  } catch (err) {
+    console.error('Gemini Chat API error:', err);
+    return `Gemini AI bağlantısında bir sorun oluştu: ${err.message}. Lütfen Ayarlar'daki Gemini API anahtarınızı ve internet bağlantınızı kontrol edin.`;
+  }
+};
+
+async function callGeminiChatApi(chatHistory, contextFilms, wizardPrefs, apiKey) {
+  const topContext = (contextFilms || []).slice(0, 8).map((f) => ({
+    baslik: f.title_tr || f.title,
+    tur: f.genre,
+    yil: f.year,
+    imdb: f.imdb_puani,
+    yas_uygunlugu: getAgeRatingInfo(f.rated).shortLabel,
+    platformlar: f.platformlar || 'Belirtilmemiş'
+  }));
+
+  const systemText = `Sen CineAI'ın zeki, samimi ve çok yönlü yapay zeka sohbet asistanısın.
+Kullanıcıyla doğal bir muhabbet mantığıyla konuşursun. Kullanıcı sana ne sorarsa (film/dizi önerisi, bir filmin konusu/oyuncuları/analizi, günlük sohbet, genel bilgi, farklı tarzda öneriler, herhangi bir soru) doğrudan onun istediği konuya odaklanarak yanıt ver.
+
+Kurallar:
+- Sadece eldeki listeye bağlı kalma! Kullanıcı başka filmler, farklı konular veya genel sorular sorarsa kendi bilginle özgürce cevapla.
+- Eğer kullanıcı "şu an ekranda ne var / listeden öner" derse, arka plandaki güncel liste bilgisinden yararlanabilirsin:
+  Güncel ekran listesi: ${JSON.stringify(topContext)}
+- Teknik kodları (PG-13, wr_skoru, Bayes, Jaccard vb.) kullanma; anlaşılır ve samimi Türkçe ile konuş.`;
+
+  // Gemini API requires contents to start with 'user' and alternate 'user' / 'model'
+  const rawMsgs = chatHistory
+    .filter((m) => m.text && m.text.trim())
+    .slice(-12)
+    .map((m) => ({
+      role: m.sender === 'user' ? 'user' : 'model',
+      text: m.text.trim()
+    }));
+
+  const contents = [];
+  for (const msg of rawMsgs) {
+    if (contents.length === 0 && msg.role !== 'user') {
+      continue;
+    }
+    const prev = contents[contents.length - 1];
+    if (prev && prev.role === msg.role) {
+      prev.parts[0].text += `\n\n${msg.text}`;
+    } else {
+      contents.push({
+        role: msg.role,
+        parts: [{ text: msg.text }]
+      });
+    }
+  }
+
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: 'Merhaba, film önerir misin?' }] });
+  }
+
+  const data = await postToGemini(
+    {
+      system_instruction: { parts: [{ text: systemText }] },
+      contents,
+      generationConfig: {
+        temperature: 0.8,
+        maxOutputTokens: 800
+      }
+    },
+    apiKey
+  );
+
+  const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  return reply || generateLocalChatFallback(chatHistory, contextFilms, wizardPrefs);
+}
+
+function generateLocalChatFallback(chatHistory, contextFilms, wizardPrefs) {
+  const lastUserMsg = [...chatHistory].reverse().find((m) => m.sender === 'user')?.text?.toLowerCase() || '';
+  const films = contextFilms || [];
+
+  // Count how many bot responses have already been sent to rotate recommendations
+  const botTurns = chatHistory.filter((m) => m.sender === 'bot').length;
+
+  if (lastUserMsg.match(/^(selam|merhaba|hey|slm|naber|nasılsın)/)) {
+    return 'Merhaba! 🎬 Ben CineAI asistanınım. İstersen sağ üstteki **Yenile** ikonuyla adım adım sihirbazı çalıştırabilir, istersen de bana nasıl bir film/dizi aradığını doğrudan yazabilirsin!';
+  }
+
+  if (films.length === 0) {
+    return 'Şu an elimde filtrelenmiş içerik görünmüyor. İsterseniz sağ üstteki yenile ikonuyla sihirbazı başlatabilir veya sol paneldeki filtreleri biraz esnetebilirsiniz.';
+  }
+
+  if (lastUserMsg.includes('aile') || lastUserMsg.includes('çocuk')) {
+    const familyPicks = films.filter((f) => {
+      const age = getAgeRatingInfo(f.rated).ageGroup;
+      return age.includes('0-4') || age.includes('5-9') || (f.genre || '').toLowerCase().includes('family') || (f.genre || '').toLowerCase().includes('aile');
+    });
+    const pick = familyPicks[botTurns % Math.max(familyPicks.length, 1)] || films[botTurns % films.length];
+    return `Ailece keyifle izleyebileceğiniz güzel bir seçenek: **${pick.title_tr || pick.title}** (${pick.year}). ⭐ **${pick.imdb_puani}** IMDb puanına sahip ve **${getAgeRatingInfo(pick.rated).shortLabel}** seviyesinde. ${pick.platformlar ? `Şu an **${pick.platformlar}** üzerinden izleyebilirsiniz.` : ''}`;
+  }
+
+  if (lastUserMsg.includes('yenile') || lastUserMsg.includes('farklı') || lastUserMsg.includes('başka') || lastUserMsg.includes('yeni')) {
+    const startIdx = (botTurns * 3) % films.length;
+    const rotated = [];
+    for (let i = 0; i < Math.min(3, films.length); i++) {
+      rotated.push(films[(startIdx + i) % films.length]);
+    }
+    const listText = rotated
+      .map((f) => `• **${f.title_tr || f.title}** (${f.year}) — ⭐ ${f.imdb_puani}${f.platformlar ? ` (${f.platformlar})` : ''}`)
+      .join('\n');
+    return `Elbette, listeden farklı seçenekler derledim:\n${listText}\n\nBunlardan birini seçebilir ya da Gemini AI ile sınırsız sohbet için Ayarlar'dan API anahtarınızı kontrol edebilirsiniz.`;
+  }
+
+  // Pick a varied movie based on turn index instead of always films[0]
+  const pick = films[botTurns % films.length];
+  return `Öne çıkan bir başka önerim: **${pick.title_tr || pick.title}** (${pick.year}) — ⭐ **${pick.imdb_puani}** IMDb puanı. ${(pick.overview || '').slice(0, 160)}... ${pick.platformlar ? `\n\n📺 Platform: **${pick.platformlar}**` : ''}`;
+}
+
