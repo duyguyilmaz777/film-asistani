@@ -38,7 +38,7 @@ export const generateAiRecommendation = async (candidateFilms, userPreferences =
   return generateLocalSmartRecommendation(candidateFilms, userPreferences);
 };
 
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 
 /**
  * Calls Google Gemini API trying active models in order
@@ -67,6 +67,20 @@ async function postToGemini(requestBody, apiKey) {
   }
 
   throw lastError || new Error('Gemini API Error');
+}
+
+/**
+ * Extracts only the final user-facing text from Gemini response,
+ * skipping any internal reasoning/thought parts (part.thought === true).
+ */
+function extractGeminiText(data) {
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const answerParts = parts.filter((p) => !p.thought && typeof p.text === 'string');
+  if (answerParts.length > 0) {
+    return answerParts.map((p) => p.text).join('\n').trim();
+  }
+  const fallbackPart = parts.find((p) => typeof p.text === 'string');
+  return fallbackPart ? fallbackPart.text.trim() : '';
 }
 
 /**
@@ -107,12 +121,12 @@ Lütfen en iyi 2-3 içeriği seçip sistem talimatlarına uygun olarak karşıla
     ],
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 1000
+      maxOutputTokens: 2048
     }
   };
 
   const data = await postToGemini(requestBody, apiKey);
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = extractGeminiText(data);
   return text || 'Tavsiye metni oluşturulamadı.';
 }
 
@@ -200,7 +214,8 @@ Kurallar:
 - Sadece eldeki listeye bağlı kalma! Kullanıcı başka filmler, farklı konular veya genel sorular sorarsa kendi bilginle özgürce cevapla.
 - Eğer kullanıcı "şu an ekranda ne var / listeden öner" derse, arka plandaki güncel liste bilgisinden yararlanabilirsin:
   Güncel ekran listesi: ${JSON.stringify(topContext)}
-- Teknik kodları (PG-13, wr_skoru, Bayes, Jaccard vb.) kullanma; anlaşılır ve samimi Türkçe ile konuş.`;
+- Teknik kodları (PG-13, wr_skoru, Bayes, Jaccard vb.) kullanma; anlaşılır ve samimi Türkçe ile konuş.
+- Sadece doğrudan kullanıcıya verilecek nihai Türkçe yanıtı yaz; İngilizce taslak, planlama notu veya sahne yönlendirmesi (*Intro:*, persona notu vb.) kesinlikle yazma.`;
 
   // Gemini API requires contents to start with 'user' and alternate 'user' / 'model'
   const rawMsgs = chatHistory
@@ -237,13 +252,13 @@ Kurallar:
       contents,
       generationConfig: {
         temperature: 0.8,
-        maxOutputTokens: 800
+        maxOutputTokens: 2048
       }
     },
     apiKey
   );
 
-  const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const reply = extractGeminiText(data);
   return reply || generateLocalChatFallback(chatHistory, contextFilms, wizardPrefs);
 }
 
